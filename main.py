@@ -40,6 +40,7 @@ def tokenize(words):
         if w.lower() in token_map.keys():
             tokens.append(token_map[w.lower()])
         else:
+            print(w, 'not in vocab')
             return None
     return tokens
 
@@ -90,8 +91,9 @@ def train_step(x, y):
 
 @tf.function
 def test_step(x, y):
-    val_logits = model(x, training=False)
-    loss_value = loss_fn(y, val_logits)
+    with tf.GradientTape() as tape:
+        val_logits = model(x, training=False)
+        loss_value = loss_fn(y, val_logits)
     return loss_value
 
 
@@ -113,7 +115,7 @@ model.build(input_shape=(None, None))
 model.compile(optimizer, loss_fn)
 print(model.summary())
 
-epochs = 8
+epochs = 4
 for epoch in range(epochs):
     print("\nStart of epoch %d" % (epoch,))
     start_time = time.time()
@@ -152,7 +154,7 @@ for epoch in range(epochs):
     print("Time taken: %.2fs" % (time.time() - start_time))
 
 # model.fit(x_train, y_train, epochs=100, validation_data=(x_val, y_val), callbacks=callbacks)
-
+model.save(f'Models/{int(time.time())}')
 
 model.answer(None, 20)
 model.answer(None, 20)
@@ -176,6 +178,11 @@ question_tokens = tokenize(question_words)
 model.answer(question_tokens, 20)
 while question != 'quit':
     question = input('Prompt?')
+    n = input("How many tokens?")
+    if n == '':
+        n = 30
+    else:
+        n = int(n)
     question_words = text_to_words(question, delim)
     question_tokens = tokenize(question_words)
     if question_tokens is not None:
