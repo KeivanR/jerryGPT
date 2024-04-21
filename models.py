@@ -62,3 +62,11 @@ class JerryModel(keras.Model):
             block = block[1:] + [new_word]
             generated.append(self.vocab[new_word])
         return generated
+
+    def freeze_base(self, freeze):
+        trainable = not freeze
+        self.norm1.trainable = trainable
+        self.layernorm1.trainable = trainable
+        self.multihead.trainable = trainable
+        self.norm2.trainable = trainable
+        self.dropout2.trainable = trainable
