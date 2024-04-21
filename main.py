@@ -1,6 +1,9 @@
 import numpy as np
+import pandas as pd
 import time
 import random
+from tqdm import tqdm
+
 import tensorflow as tf
 from tensorflow import keras
 
@@ -10,11 +13,26 @@ from settings import *
 optimizer = keras.optimizers.Adam()
 loss_fn = keras.losses.CategoricalCrossentropy()
 
-with open(text_input) as f:
-    lines = f.readlines()
-text = ''.join(lines)
+train_lines = []
+val_lines = []
+for text_input in text_inputs:
+    if 'WikiQA' in text_input:
+        encoding = 'utf-8'
+    else:
+        encoding = 'unicode_escape'
+    with open(text_input, encoding=encoding) as f:
+        lines = f.readlines()
+    train_lines += lines[int(val_split*len(lines)):]+[' newbook ']
+    val_lines += lines[:int(val_split*len(lines))]+[' newbook ']
+train_text = ' newline '.join(train_lines)
+val_text = ' newline '.join(val_lines)
 
-delim = [",", ".", "'", "!", "?", ";", '"', "-", ":", "(", ")", "£", "$", "/", "\\"]
+delim0 = ['" ', ' "', "'", "-", "/", "newline", "_", "—", "‘", " “", "“ "]
+delimL = ["(", "£", "`", "{", "~"]
+delimR = [",", ".", "!", "?", ":", ")", "$", "*", "}"]
+delimRL = [";", "|", "+", "&"]
+delimMaj = [' "', ".", "!", "?", "newline"]
+all_delims = delim0 + delimL + delimR + delimRL
 
 
 def text_to_words(text, delim):
@@ -23,8 +41,37 @@ def text_to_words(text, delim):
     return text.split()
 
 
-text_words = text_to_words(text, delim)
-vocab = np.unique([w.lower() for w in text_words])
+def split_upper(text, d, maj=False):
+    split = text.split(f' {d} ')
+    if maj:
+        for i, w in enumerate(split):
+            if len(w) > 0:
+                split[i] = w[0].upper() + w[1:]
+    return split
+
+def words_to_text(words, d0, dL, dR, dRL, dMaj):
+    text = ' '.join(words)
+    for d in d0:
+        split = split_upper(text, d, maj=d in dMaj)
+        text = f'{d}'.join(split)
+    for d in dL:
+        split = split_upper(text, d, maj=d in dMaj)
+        text = f' {d}'.join(split)
+    for d in dR:
+        split = split_upper(text, d, maj=d in dMaj)
+        text = f'{d} '.join(split)
+    for d in dRL:
+        split = split_upper(text, d, maj=d in dMaj)
+        text = f' {d} '.join(split)
+    text = text.replace('newline','\n')
+    text = text.replace('Newline','\n')
+    return text
+
+
+train_words = text_to_words(train_text, all_delims)
+val_words = text_to_words(val_text, all_delims)
+vocab, counts = np.unique([w.lower() for w in train_words + val_words], return_counts=True)
+vocab = vocab[counts>min_token_count*len(train_words + val_words)]
 vocab_size = len(vocab)
 for v in vocab:
     print(v)
@@ -40,8 +87,8 @@ def tokenize(words):
         if w.lower() in token_map.keys():
             tokens.append(token_map[w.lower()])
         else:
-            print(w, 'not in vocab')
-            return None
+            #   print(w, 'not in vocab')
+            tokens.append(vocab_size)
     return tokens
 
 
@@ -56,24 +103,34 @@ def one_hot(tokens):
     return onehot
 
 
-train_words = text_words[int(val_split * len(text_words)):]
 print('Train:', len(train_words))
-val_words = text_words[:int(val_split * len(text_words))]
 print('Val:', len(val_words))
+
 
 train_tokens = tokenize(train_words)
 val_tokens = tokenize(val_words)
 
+print(len(train_tokens))
 
-def get_batch(b_size, t_size, training=True):
+
+def remove_unknown(tokens, t_size):
+    tokens = np.array(tokens)
+    rollmax = np.array(pd.Series(tokens).rolling(t_size).max().shift(-t_size + 1))
+    return tokens[rollmax<vocab_size]
+
+
+train_tokens = remove_unknown(train_tokens, block_size)
+val_tokens = remove_unknown(val_tokens, block_size)
+print(len(train_tokens))
+
+def get_batch(b_idx, t_size, training=True):
     x = []
     y = []
     if training:
         tokens = train_tokens
     else:
         tokens = val_tokens
-    idx = np.random.choice(len(tokens) - t_size - 1, b_size)
-    for i in idx:
+    for i in b_idx:
         x.append(tokens[i:i + t_size])
         y.append(one_hot(tokens[i + 1:i + t_size + 1]))
     return np.array(x), np.array(y)
@@ -108,74 +165,92 @@ callbacks = [
         verbose=1,
     )
 ]
+if model_name is None:
+    model = models.JerryModel(vocab, block_size)
+    model.build(input_shape=(None, None))
 
-model = models.JerryModel(vocab, block_size)
-model.build(input_shape=(None, None))
+    model.compile(optimizer, loss_fn)
+    print(model.summary())
 
-model.compile(optimizer, loss_fn)
-print(model.summary())
+    for epoch in range(epochs):
+        print("\nStart of epoch %d" % (epoch+1,))
+        start_time = time.time()
 
-epochs = 4
-for epoch in range(epochs):
-    print("\nStart of epoch %d" % (epoch,))
-    start_time = time.time()
+        train_loss = 0
+        batch_idx = np.arange(len(train_tokens) - block_size - 1)
+        random.shuffle(batch_idx)
+        # Iterate over the batches of the dataset.
+        for step in tqdm(range(len(batch_idx) // batch_size)):
+            idx = batch_idx[batch_size * step + np.arange(batch_size)]
+            x_batch_train, y_batch_train = get_batch(idx, block_size, training=True)
+            loss_value = train_step(x_batch_train, y_batch_train)
+            train_loss += loss_value
 
-    train_loss = 0
-    # Iterate over the batches of the dataset.
-    for step in range(len(train_tokens) // batch_size):
-        x_batch_train, y_batch_train = get_batch(batch_size, block_size, training=True)
-        loss_value = train_step(x_batch_train, y_batch_train)
-        train_loss += loss_value
+            # # Log every 200 batches.
+            # if step % 200 == 0:
+            #     print(
+            #         "Training loss (for one batch) at step %d: %.4f"
+            #         % (step, float(loss_value))
+            #     )
+            #     print("Seen so far: %d samples" % ((step + 1) * batch_size))
+        train_loss /= step
+        print(
+            "Training loss: %.4f"
+            % (float(train_loss))
+        )
 
-        # # Log every 200 batches.
-        # if step % 200 == 0:
-        #     print(
-        #         "Training loss (for one batch) at step %d: %.4f"
-        #         % (step, float(loss_value))
-        #     )
-        #     print("Seen so far: %d samples" % ((step + 1) * batch_size))
-    train_loss /= step
-    print(
-        "Training loss: %.4f"
-        % (float(train_loss))
-    )
+        # Run a validation loop at the end of each epoch.
+        val_loss = 0
+        batch_idx = np.arange(len(val_tokens) - block_size - 1)
+        random.shuffle(batch_idx)
+        for step in range(len(batch_idx) // batch_size):
+            idx = batch_size * step + np.arange(batch_size)
+            x_batch_val, y_batch_val = get_batch(idx, block_size, training=False)
+            val_loss += test_step(x_batch_val, y_batch_val)
+        val_loss /= step
+        print(
+            "Validation loss: %.4f"
+            % (float(val_loss))
+        )
 
-    # Run a validation loop at the end of each epoch.
-    val_loss = 0
-    for step in range(len(val_tokens) // batch_size):
-        x_batch_val, y_batch_val = get_batch(batch_size, block_size, training=False)
-        val_loss += test_step(x_batch_val, y_batch_val)
-    val_loss /= step
-    print(
-        "Validation loss: %.4f"
-        % (float(val_loss))
-    )
+        print("Time taken: %.2fs" % (time.time() - start_time))
 
-    print("Time taken: %.2fs" % (time.time() - start_time))
-
-# model.fit(x_train, y_train, epochs=100, validation_data=(x_val, y_val), callbacks=callbacks)
-model.save(f'Models/{int(time.time())}')
-
-model.answer(None, 20)
-model.answer(None, 20)
-model.answer(None, 20)
-model.answer(None, 20)
+    # model.fit(x_train, y_train, epochs=100, validation_data=(x_val, y_val), callbacks=callbacks)
+    model.save(f'Models/{int(time.time())}')
+else:
+    model = models.JerryModel(vocab, block_size)
+    model.build(input_shape=(None, None))
+    model.compile(optimizer, loss_fn)
+    model.summary()
+    model.load_weights(f'Models/{model_name}')
+answer = model.answer(None, 20)
+print('OUTPUT: ', words_to_text(answer, delim0, delimL, delimR, delimRL, delimMaj))
+answer = model.answer(None, 20)
+print('OUTPUT: ', words_to_text(answer, delim0, delimL, delimR, delimRL, delimMaj))
+answer = model.answer(None, 20)
+print('OUTPUT: ', words_to_text(answer, delim0, delimL, delimR, delimRL, delimMaj))
+answer = model.answer(None, 20)
+print('OUTPUT: ', words_to_text(answer, delim0, delimL, delimR, delimRL, delimMaj))
 question = 'Harry Potter was running around the corner'
-question_words = text_to_words(question, delim)
+question_words = text_to_words(question, all_delims)
 question_tokens = tokenize(question_words)
-model.answer(question_tokens, 20)
+answer = model.answer(question_tokens, 20)
+print('OUTPUT: ', words_to_text(answer, delim0, delimL, delimR, delimRL, delimMaj))
 question = 'He was so tired'
-question_words = text_to_words(question, delim)
+question_words = text_to_words(question, all_delims)
 question_tokens = tokenize(question_words)
-model.answer(question_tokens, 20)
+answer = model.answer(question_tokens, 20)
+print('OUTPUT: ', words_to_text(answer, delim0, delimL, delimR, delimRL, delimMaj))
 question = 'Why are you saying that'
-question_words = text_to_words(question, delim)
+question_words = text_to_words(question, all_delims)
 question_tokens = tokenize(question_words)
-model.answer(question_tokens, 20)
+answer = model.answer(question_tokens, 20)
+print('OUTPUT: ', words_to_text(answer, delim0, delimL, delimR, delimRL, delimMaj))
 question = 'It had been a long time'
-question_words = text_to_words(question, delim)
+question_words = text_to_words(question, all_delims)
 question_tokens = tokenize(question_words)
-model.answer(question_tokens, 20)
+answer = model.answer(question_tokens, 20)
+print('OUTPUT: ', words_to_text(answer, delim0, delimL, delimR, delimRL, delimMaj))
 while question != 'quit':
     question = input('Prompt?')
     n = input("How many tokens?")
@@ -183,9 +258,10 @@ while question != 'quit':
         n = 30
     else:
         n = int(n)
-    question_words = text_to_words(question, delim)
+    question_words = text_to_words(question, all_delims)
     question_tokens = tokenize(question_words)
     if question_tokens is not None:
-        model.answer(question_tokens, 30)
+        answer = model.answer(question_tokens, n)
+        print('OUTPUT: ', words_to_text(answer, delim0, delimL, delimR, delimRL, delimMaj))
     else:
         print('One word does not exists in the vocab, please try another prompt.')
