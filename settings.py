@@ -8,16 +8,16 @@ text_inputs = [
     'Data/harry4.txt',
     'Data/shakespeare.txt',
 ]
-fine_tuning = [
-    'Data/WikiQA-train.txt',
-    'Data/WikiQA-test.txt',
-]
+fine_tuning = None#[
+#     'Data/WikiQA-train.txt',
+#     'Data/WikiQA-test.txt',
+# ]
 val_split = .2
 block_size = 64
 batch_size = 32
 n_epochs = 4
 n_epochs_fine_tuning = 2
-model_name = '1711182129' #None #'1710872451' #
+model_name = None#'1713851209' #None #'1710872451' #
 min_token_count = 10e-7
 
 delim0 = ['" ', ' "', "'", "-", "/", "newline", "_", "—", "‘", " “", "“ "]

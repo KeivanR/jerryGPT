@@ -80,7 +80,7 @@ def remove_unknown(tokens, t_size, vocab_size):
 def words_from_texts(inputs, split=.2):
     train_lines = []
     val_lines = []
-    for text_input in text_inputs:
+    for text_input in inputs:
         if 'WikiQA' in text_input:
             encoding = 'utf-8'
         else:
@@ -96,8 +96,6 @@ def words_from_texts(inputs, split=.2):
     val_w = text_to_words(val_text, all_delims)
     vocabulary, counts = np.unique([w.lower() for w in train_w + val_w], return_counts=True)
     vocabulary = vocabulary[counts > min_token_count * len(train_w + val_w)]
-    for v in vocabulary:
-        print(v)
     print('Vocabulary size: ', len(vocabulary))
     print('Train:', len(train_w))
     print('Val:', len(val_w))
@@ -185,8 +183,7 @@ def train_model(model, train_tok, val_tok, epochs, vocabulary):
                 % (float(val_loss))
             )
         print("Time taken: %.2fs" % (time.time() - start_time))
-        # model.fit(x_train, y_train, epochs=100, validation_data=(x_val, y_val), callbacks=callbacks)
-        model.save(f'Models/{int(time.time())}')
+    model.save(f'Models/{int(time.time())}')
 
 
 train_words, val_words, vocab = words_from_texts(text_inputs, split=val_split)
@@ -222,22 +219,22 @@ answer = model.answer(None, 20)
 print('OUTPUT: ', words_to_text(answer, delim0, delimL, delimR, delimRL, delimMaj))
 question = 'Harry Potter was running around the corner'
 question_words = text_to_words(question, all_delims)
-question_tokens = tokenize(question_words)
+question_tokens = tokenize(question_words, vocab)
 answer = model.answer(question_tokens, 20)
 print('OUTPUT: ', words_to_text(answer, delim0, delimL, delimR, delimRL, delimMaj))
 question = 'He was so tired'
 question_words = text_to_words(question, all_delims)
-question_tokens = tokenize(question_words)
+question_tokens = tokenize(question_words, vocab)
 answer = model.answer(question_tokens, 20)
 print('OUTPUT: ', words_to_text(answer, delim0, delimL, delimR, delimRL, delimMaj))
 question = 'Why are you saying that'
 question_words = text_to_words(question, all_delims)
-question_tokens = tokenize(question_words)
+question_tokens = tokenize(question_words, vocab)
 answer = model.answer(question_tokens, 20)
 print('OUTPUT: ', words_to_text(answer, delim0, delimL, delimR, delimRL, delimMaj))
 question = 'It had been a long time'
 question_words = text_to_words(question, all_delims)
-question_tokens = tokenize(question_words)
+question_tokens = tokenize(question_words, vocab)
 answer = model.answer(question_tokens, 20)
 print('OUTPUT: ', words_to_text(answer, delim0, delimL, delimR, delimRL, delimMaj))
 while question != 'quit':
@@ -248,7 +245,7 @@ while question != 'quit':
     else:
         n = int(n)
     question_words = text_to_words(question, all_delims)
-    question_tokens = tokenize(question_words)
+    question_tokens = tokenize(question_words, vocab)
     if question_tokens is not None:
         answer = model.answer(question_tokens, n)
         print('OUTPUT: ', words_to_text(answer, delim0, delimL, delimR, delimRL, delimMaj))

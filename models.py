@@ -39,7 +39,7 @@ class JerryModel(keras.Model):
         t_emb = self.token_embedding(inputs, training=training)
         #p_emb = self.pos_embedding(tf.range(self.blocksize), training=training)
         x = t_emb + self.sincos_enc
-        x = self.norm1(x, training=training)
+        # x = self.norm1(x, training=training)
         x = self.layernorm1(x, training=training)
         x = self.multihead(x, x, use_causal_mask=True, training=training)
         x = self.norm2(x, training=training)
@@ -65,7 +65,7 @@ class JerryModel(keras.Model):
 
     def freeze_base(self, freeze):
         trainable = not freeze
-        self.norm1.trainable = trainable
+        # self.norm1.trainable = trainable
         self.layernorm1.trainable = trainable
         self.multihead.trainable = trainable
         self.norm2.trainable = trainable
