@@ -4,10 +4,6 @@ from settings import *
 import numpy as np
 
 
-def create_look_ahead_mask(size):
-    mask = 1 - tf.linalg.band_part(tf.ones((size, size)), -1, 0)
-    return mask  # (seq_len, seq_len)
-
 def sincos_encoding(blocksize, d, N):
     res = np.zeros((blocksize, d))
     idx = 2*np.arange(d//2)
@@ -36,15 +32,14 @@ class JerryModel(keras.Model):
         self.layernorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
         self.dropout1 = keras.layers.Dropout(0.2)
         self.dropout2 = keras.layers.Dropout(0.2)
-        self.multihead = keras.layers.MultiHeadAttention(2, 8,kernel_regularizer=keras.regularizers.l2(l=0.1))
-        self.lstm = keras.layers.LSTM(8, return_sequences=True)
-        self.look_ahead_mask = create_look_ahead_mask(blocksize)
+        self.multihead = keras.layers.MultiHeadAttention(6, 16,kernel_regularizer=keras.regularizers.l2(l=0.1))
+        # self.lstm = keras.layers.LSTM(8, return_sequences=True)
 
     def call(self, inputs, training=False):
         t_emb = self.token_embedding(inputs, training=training)
         #p_emb = self.pos_embedding(tf.range(self.blocksize), training=training)
         x = t_emb + self.sincos_enc
-        x = self.norm1(x, training=training)
+        # x = self.norm1(x, training=training)
         x = self.layernorm1(x, training=training)
         x = self.multihead(x, x, use_causal_mask=True, training=training)
         x = self.norm2(x, training=training)
@@ -56,14 +51,22 @@ class JerryModel(keras.Model):
         if block is None:
             block = list(np.random.choice(len(self.vocab), self.blocksize))
         if len(block) < self.blocksize:
-            block = list(np.random.choice(len(self.vocab), self.blocksize - len(block))) + block
+            block = [list(self.vocab).index('newline')]*(self.blocksize - len(block)) + block #list(np.random.choice(len(self.vocab), self.blocksize - len(block))) + block
         elif len(block)>self.blocksize:
             block = block[len(block)-self.blocksize:]
         print('INPUT: ', ' '.join([self.vocab[w] for w in block]))
-        generated = ''
+        generated = []
         for i in range(size):
             probs = self.call(tf.convert_to_tensor([block]))[0][-1]
             new_word = np.random.choice(len(self.vocab), p=np.array(probs))
             block = block[1:] + [new_word]
-            generated += ' ' + self.vocab[new_word]
-        print('OUTPUT: ', generated)
+            generated.append(self.vocab[new_word])
+        return generated
+
+    def freeze_base(self, freeze):
+        trainable = not freeze
+        # self.norm1.trainable = trainable
+        self.layernorm1.trainable = trainable
+        self.multihead.trainable = trainable
+        self.norm2.trainable = trainable
+        self.dropout2.trainable = trainable
