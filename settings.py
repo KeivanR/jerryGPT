@@ -1,17 +1,19 @@
 text_inputs = [
-    'Data/WikiQA-train.txt',
-    'Data/WikiQA-test.txt',
-    'Data/example.txt',
+    # 'Data/WikiQA-train.txt',
+    # 'Data/WikiQA-test.txt',
+    # 'Data/example.txt',
     'Data/harry.txt',
     'Data/harry2.txt',
     'Data/harry3.txt',
     'Data/harry4.txt',
-    'Data/shakespeare.txt',
+    # 'Data/shakespeare.txt',
 ]
-fine_tuning = None#[
-#     'Data/WikiQA-train.txt',
-#     'Data/WikiQA-test.txt',
-# ]
+fine_tuning = [
+    'Data/WikiQA-train.txt',
+    'Data/WikiQA-test.txt',
+]
+if len(fine_tuning)==0:
+    fine_tuning = None
 val_split = .2
 block_size = 64
 batch_size = 32

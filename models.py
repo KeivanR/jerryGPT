@@ -21,10 +21,11 @@ class JerryModel(keras.Model):
         super().__init__()
         self.vocab = vocab
         self.blocksize = blocksize
-        self.token_embedding = keras.layers.Embedding(len(vocab), 32)
-        self.pos_embedding = keras.layers.Embedding(blocksize, 32)
-        self.sincos_enc = sincos_encoding(blocksize, 32, 10000)
-        self.dense1 = keras.layers.Dense(32, activation="relu")
+        self.embedding_size = 32
+        self.token_embedding = keras.layers.Embedding(len(vocab), self.embedding_size)
+        self.pos_embedding = keras.layers.Embedding(blocksize, self.embedding_size)
+        self.sincos_enc = sincos_encoding(blocksize, self.embedding_size, 10000)
+        self.dense1 = keras.layers.Dense(self.embedding_size, activation="relu")
         self.dense2 = keras.layers.Dense(len(vocab), activation="softmax",kernel_regularizer=keras.regularizers.l2(l=0.1))
         self.norm1 = keras.layers.BatchNormalization()
         self.norm2 = keras.layers.BatchNormalization()
@@ -41,6 +42,10 @@ class JerryModel(keras.Model):
         x = t_emb + self.sincos_enc
         # x = self.norm1(x, training=training)
         x = self.layernorm1(x, training=training)
+        x = self.multihead(x, x, use_causal_mask=True, training=training)
+        x = self.norm2(x, training=training)
+        x = self.dropout2(x, training=training)
+        x = self.dense1(x, training=training)
         x = self.multihead(x, x, use_causal_mask=True, training=training)
         x = self.norm2(x, training=training)
         x = self.dropout2(x, training=training)
